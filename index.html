@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Idle Button — Unit 04-B</title>
+  <meta name="description" content="Press the button. Earn currency. Uncover what lies beneath." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell" id="app-shell">
+    <!-- Top Status Bar (hidden until Phase 1) -->
+    <header class="top-bar is-hidden" id="top-bar">
+      <div class="unit-id">
+        <span class="status-led" id="status-led" aria-hidden="true"></span>
+        <span class="mono">UNIT 04-B</span>
+        <span class="phase-tag mono" id="phase-tag">STANDBY</span>
+      </div>
+      <div class="top-controls">
+        <button class="icon-btn mono" id="btn-sound" type="button" title="Toggle mechanical audio">
+          AUDIO: ON
+        </button>
+        <button class="icon-btn mono" id="btn-reset" type="button" title="Reset progress">
+          RESET
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="workspace" id="workspace">
+      <!-- Left / Center Column: The Button & Currency -->
+      <section class="primary-column" aria-label="Primary Actuator">
+        <div class="currency-display">
+          <div class="currency-label mono is-hidden" id="currency-label">BALANCE</div>
+          <div class="currency-value mono" id="currency-value">$0.00</div>
+          <div class="currency-rate mono is-hidden" id="currency-rate">+$0.00 / sec</div>
+        </div>
+
+        <div class="button-housing" id="button-housing">
+          <div class="housing-screws" aria-hidden="true">
+            <span></span><span></span><span></span><span></span>
+          </div>
+          <button class="main-button" id="main-button" type="button" aria-label="Press button">
+            <span class="button-cap">
+              <span class="button-label mono" id="button-label">PRESS</span>
+              <span class="button-sub mono is-hidden" id="button-sub">+$1.00</span>
+            </span>
+          </button>
+          <div class="floating-layer" id="floating-layer" aria-hidden="true"></div>
+        </div>
+
+        <!-- Secondary Action: Inspect Casing / Overclock (unlocked later) -->
+        <div class="secondary-action is-hidden" id="secondary-action">
+          <button class="action-btn mono" id="btn-inspect" type="button">
+            INSPECT CASING — $600.00
+          </button>
+        </div>
+
+        <!-- Telemetry Strip (unlocked in Phase 3) -->
+        <div class="telemetry-strip is-hidden" id="telemetry-strip">
+          <div class="telemetry-item">
+            <span class="telemetry-key mono">PRESSES</span>
+            <span class="telemetry-val mono" id="stat-presses">0</span>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-key mono">PER PRESS</span>
+            <span class="telemetry-val mono" id="stat-per-press">$1.00</span>
+          </div>
+          <div class="telemetry-item">
+            <span class="telemetry-key mono">SIGNAL DEPTH</span>
+            <span class="telemetry-val mono" id="stat-depth">0.0 m</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Column: Narrative Log & Upgrades (unlocked progressively) -->
+      <aside class="side-column is-hidden" id="side-column">
+        <!-- Upgrades Panel (unlocked in Phase 2) -->
+        <section class="panel is-hidden" id="panel-upgrades" aria-label="Hardware & Upgrades">
+          <div class="panel-header">
+            <h2 class="panel-title mono">HARDWARE &amp; RELAYS</h2>
+            <span class="panel-meta mono" id="upgrades-count">0 INSTALLED</span>
+          </div>
+          <div class="upgrades-list" id="upgrades-list"></div>
+        </section>
+
+        <!-- Narrative Log Panel (unlocked in Phase 1) -->
+        <section class="panel is-hidden" id="panel-log" aria-label="System Log">
+          <div class="panel-header">
+            <h2 class="panel-title mono">SYSTEM LOG</h2>
+            <span class="panel-meta mono" id="log-count">0 ENTRIES</span>
+          </div>
+          <div class="log-feed" id="log-feed" role="log" aria-live="polite"></div>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <script type="module" src="js/game.js"></script>
+</body>
+</html>
