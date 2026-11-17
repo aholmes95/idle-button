@@ -1,216 +1,132 @@
-import { loadState, saveState, createInitialState, resetAllState } from './state.js';
-import { playClickSound, playUnlockSound } from './audio.js';
+import {
+  loadState,
+  saveState,
+  createInitialState,
+  resetAllState,
+  exportSave,
+  importSave
+} from './state.js';
+import {
+  playClickSound,
+  playUnlockSound,
+  playAnomalySound,
+  playAchievementSound
+} from './audio.js';
 import {
   GENERATORS,
-  MILESTONES,
   MANAGERS,
-  UPGRADES,
   RESEARCH_PROJECTS,
   ABILITIES,
+  BOARDROOM_PERKS,
   NARRATIVE_BEATS
 } from './data.js';
+import { getCrossFloorBonuses } from './modifiers.js';
+import {
+  hasUpgrade,
+  hasResearch,
+  hasPerk,
+  isAbilityActive,
+  getGenPayout,
+  getGenCycleTime,
+  getPassiveMoneyRate,
+  getPassiveRpRate,
+  getRpMultiplier,
+  getClickValue,
+  getBuyInfo,
+  getResearchDuration,
+  getPendingShares,
+  calculateOfflineEarnings,
+  checkAchievements
+} from './economy.js';
+import { fmtMoney, fmtNumber } from './format.js';
+import {
+  cacheElements,
+  el,
+  spawnFloat,
+  pulseLed,
+  pulseButtonRing,
+  decayButtonRing,
+  switchTab,
+  switchFloor,
+  renderFloorSwitcher,
+  renderVisibility,
+  renderGenerators,
+  renderUpgrades,
+  renderResearch,
+  renderAbilities,
+  renderAchievements,
+  renderPrestige,
+  renderMemos,
+  renderAll,
+  updateDynamicUI,
+  openModal,
+  closeModal,
+  closeAllModals,
+  showOfflineModal,
+  showExportImportModal,
+  spawnAnomalyFloater,
+  clearAnomalyFloater
+} from './ui.js';
+import {
+  tickTD,
+  renderTD,
+  updateTDUI,
+  bindTDEvents,
+  tdBuyPad,
+  tdPlaceTurret,
+  tdUpgradeTurret,
+  tdSalvageTurret,
+  tdTriggerOvercharge,
+  tdToggleAutoWave,
+  tdAdvanceWave
+} from './floors/td.js';
+import {
+  tickRPG,
+  renderRPG,
+  updateRPGUI,
+  bindRPGEvents
+} from './floors/rpg.js';
+import {
+  tickMerge,
+  renderMerge,
+  updateMergeUI,
+  bindMergeEvents
+} from './floors/merge.js';
 
 let state = loadState();
 let lastFrame = performance.now();
 let lastSave = performance.now();
 
-const el = {
-  topBar: document.getElementById('top-bar'),
-  statusLed: document.getElementById('status-led'),
-  brandName: document.getElementById('brand-name'),
-  phaseTag: document.getElementById('phase-tag'),
-  pillRp: document.getElementById('pill-rp'),
-  topRp: document.getElementById('top-rp'),
-  pillShares: document.getElementById('pill-shares'),
-  topShares: document.getElementById('top-shares'),
-  btnSound: document.getElementById('btn-sound'),
-  btnReset: document.getElementById('btn-reset'),
-  workspace: document.getElementById('workspace'),
-  currencyLabel: document.getElementById('currency-label'),
-  currencyValue: document.getElementById('currency-value'),
-  currencyRates: document.getElementById('currency-rates'),
-  rateMoney: document.getElementById('rate-money'),
-  rateRpSep: document.getElementById('rate-rp-sep'),
-  rateRp: document.getElementById('rate-rp'),
-  mainButton: document.getElementById('main-button'),
-  buttonLabel: document.getElementById('button-label'),
-  buttonSub: document.getElementById('button-sub'),
-  floatingLayer: document.getElementById('floating-layer'),
-  abilitiesBar: document.getElementById('abilities-bar'),
-  abilitiesGrid: document.getElementById('abilities-grid'),
-  memoBox: document.getElementById('memo-box'),
-  memoTitle: document.getElementById('memo-title'),
-  memoCount: document.getElementById('memo-count'),
-  memoFeed: document.getElementById('memo-feed'),
-  rightColumn: document.getElementById('right-column'),
-  tabBtns: document.querySelectorAll('.tab-btn'),
-  tabBtnUpgrades: document.getElementById('tab-btn-upgrades'),
-  tabBtnResearch: document.getElementById('tab-btn-research'),
-  tabBtnPrestige: document.getElementById('tab-btn-prestige'),
-  badgeUpgrades: document.getElementById('badge-upgrades'),
-  badgeResearch: document.getElementById('badge-research'),
-  buyModeBtns: document.querySelectorAll('.mode-btn'),
-  generatorsList: document.getElementById('generators-list'),
-  upgradesSummary: document.getElementById('upgrades-summary'),
-  managersList: document.getElementById('managers-list'),
-  upgradesList: document.getElementById('upgrades-list'),
-  researchRpDisplay: document.getElementById('research-rp-display'),
-  activeResearchBox: document.getElementById('active-research-box'),
-  researchList: document.getElementById('research-list'),
-  prestigeCard: document.getElementById('prestige-card')
+let anomalySpawnRemaining = 14 + Math.random() * 6;
+let anomalyActiveRemaining = 0;
+
+const handlers = {
+  onBuyGenerator: buyGenerator,
+  onRunGenerator: runGenerator,
+  onBuyUpgrade: buyUpgradeOrManager,
+  onStartResearch: startResearch,
+  onTriggerAbility: triggerAbility,
+  onRestructure: doRestructure,
+  onBuyPerk: buyBoardroomPerk
 };
-
-function fmtMoney(v) {
-  if (v >= 1e9) return '$' + (v / 1e9).toFixed(2) + 'B';
-  if (v >= 1e6) return '$' + (v / 1e6).toFixed(2) + 'M';
-  return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function hasUpgrade(id) {
-  return state.upgrades.includes(id);
-}
-
-function hasResearch(id) {
-  return state.completedResearch.includes(id);
-}
-
-function isAbilityActive(id) {
-  return (state.abilities[id]?.activeRemaining || 0) > 0;
-}
-
-function getShareMultiplier() {
-  const perShare = hasResearch('res_vessel') ? 0.5 : 0.25;
-  return 1 + state.shares * perShare;
-}
-
-function getGlobalMultiplier() {
-  let mult = getShareMultiplier();
-  if (hasUpgrade('upg_synergy')) mult *= 1.5;
-  if (hasUpgrade('upg_compliance')) mult *= 2;
-  if (hasResearch('res_acoustics')) mult *= 1.5;
-  if (hasResearch('res_compliance')) mult *= 2;
-  if (isAbilityActive('ab_rush')) mult *= 2;
-  return mult;
-}
-
-function getSpeedMultiplier() {
-  let mult = 1;
-  if (hasResearch('res_workflow')) mult *= 1.2;
-  return mult;
-}
-
-function getGenMilestoneMult(owned) {
-  let mult = 1;
-  for (const m of MILESTONES) {
-    if (owned >= m) mult *= 2;
-  }
-  return mult;
-}
-
-function getGenPayout(gen) {
-  const owned = state.generators[gen.id]?.owned || 0;
-  if (owned === 0) return 0;
-  let mult = getGlobalMultiplier() * getGenMilestoneMult(owned);
-  if (gen.id === 'intern' && hasUpgrade('upg_intern_manual')) mult *= 2;
-  if (gen.id === 'bird' && hasUpgrade('upg_bird_oil')) mult *= 2;
-  if (gen.id === 'solenoid' && hasUpgrade('upg_solenoid_amp')) mult *= 2;
-  return gen.basePayout * owned * mult;
-}
-
-function getGenCycleTime(gen) {
-  return gen.cycleTime / getSpeedMultiplier();
-}
-
-function getPassiveMoneyRate() {
-  let total = 0;
-  for (const gen of GENERATORS) {
-    const owned = state.generators[gen.id]?.owned || 0;
-    if (owned > 0 && hasUpgrade(gen.managerId)) {
-      total += getGenPayout(gen) / getGenCycleTime(gen);
-    }
-  }
-  return total;
-}
-
-function getPassiveRpRate() {
-  if (state.phase < 3) return 0;
-  let total = 0;
-  const rpMult = isAbilityActive('ab_syphon') ? 2 : 1;
-  for (const gen of GENERATORS) {
-    const owned = state.generators[gen.id]?.owned || 0;
-    if (owned > 0 && hasUpgrade(gen.managerId)) {
-      total += (gen.rpPerCycle * owned * rpMult) / getGenCycleTime(gen);
-    }
-  }
-  return total;
-}
-
-function getClickValue() {
-  let base = 1 + (hasUpgrade('upg_keycap') ? 1 : 0);
-  if (hasUpgrade('upg_espresso')) base *= 2;
-  if (hasResearch('res_ergonomics')) base *= 1.5;
-  base *= getShareMultiplier();
-  if (isAbilityActive('ab_rush')) base *= 2;
-  if (isAbilityActive('ab_syphon')) base *= 3;
-  if (hasUpgrade('upg_tether')) {
-    base += getPassiveMoneyRate() * 0.02;
-  }
-  return base;
-}
-
-function getBulkCost(gen, owned, count) {
-  const r = gen.costScale;
-  const first = gen.baseCost * Math.pow(r, owned);
-  if (count === 1) return Math.round(first);
-  return Math.round(first * ((Math.pow(r, count) - 1) / (r - 1)));
-}
-
-function getMaxAffordable(gen, owned, money) {
-  let count = 0;
-  let total = 0;
-  let nextCost = Math.round(gen.baseCost * Math.pow(gen.costScale, owned));
-  while (total + nextCost <= money && count < 500) {
-    total += nextCost;
-    count++;
-    nextCost = Math.round(gen.baseCost * Math.pow(gen.costScale, owned + count));
-  }
-  return { count, cost: total };
-}
-
-function getBuyInfo(gen) {
-  const owned = state.generators[gen.id]?.owned || 0;
-  if (state.buyMode === '1') {
-    return { count: 1, cost: getBulkCost(gen, owned, 1) };
-  }
-  if (state.buyMode === '10') {
-    return { count: 10, cost: getBulkCost(gen, owned, 10) };
-  }
-  const max = getMaxAffordable(gen, owned, state.money);
-  if (max.count === 0) {
-    return { count: 1, cost: getBulkCost(gen, owned, 1), cantAffordMax: true };
-  }
-  return max;
-}
 
 function addMemo(text, type = 'fun') {
   state.memos.unshift({ time: new Date().toTimeString().slice(0, 8), text, type });
   if (state.memos.length > 50) state.memos.length = 50;
-  renderMemos();
+  renderMemos(state);
 }
 
-function spawnFloat(amount) {
-  const node = document.createElement('span');
-  node.className = 'float-delta';
-  node.textContent = `+${fmtMoney(amount)}`;
-  node.style.left = `calc(50% + ${(Math.random() - 0.5) * 34}px)`;
-  el.floatingLayer.appendChild(node);
-  node.addEventListener('animationend', () => node.remove());
-}
-
-function pulseLed() {
-  el.statusLed.classList.add('is-pulsing');
-  clearTimeout(pulseLed._t);
-  pulseLed._t = setTimeout(() => el.statusLed.classList.remove('is-pulsing'), 120);
+function processAchievements() {
+  const newlyUnlocked = checkAchievements(state);
+  if (newlyUnlocked.length === 0) return;
+  for (const ach of newlyUnlocked) {
+    addMemo(`Achievement Unlocked: ${ach.name} (+5% Global Output)`, 'system');
+  }
+  playAchievementSound(state.soundEnabled);
+  renderAchievements(state);
+  renderGenerators(state, handlers);
+  renderPrestige(state, handlers);
+  saveState(state);
 }
 
 function checkPhasesAndNarrative() {
@@ -219,7 +135,7 @@ function checkPhasesAndNarrative() {
   if (state.phase < 1 && state.presses >= 5) { state.phase = 1; changed = true; }
   if (state.phase < 2 && state.totalMoneyRun >= 25) { state.phase = 2; changed = true; }
   if (state.phase < 3 && state.totalMoneyRun >= 200) { state.phase = 3; changed = true; }
-  if (hasResearch('res_compliance')) {
+  if (hasResearch(state, 'res_compliance')) {
     if (state.phase < 4) { state.phase = 4; changed = true; }
     if (!state.sinisterRevealed) { state.sinisterRevealed = true; changed = true; }
   }
@@ -234,33 +150,41 @@ function checkPhasesAndNarrative() {
 
   if (changed) {
     playUnlockSound(state.soundEnabled);
-    renderVisibility();
-    renderGenerators();
-    renderUpgrades();
-    renderResearch();
-    renderAbilities();
-    renderPrestige();
+    renderVisibility(state);
+    renderFloorSwitcher(state);
+    renderGenerators(state, handlers);
+    renderUpgrades(state, handlers);
+    renderResearch(state, handlers);
+    renderAbilities(state, handlers);
+    renderPrestige(state, handlers);
   }
 }
 
 function handlePress() {
-  const gain = getClickValue();
+  const bonuses = getCrossFloorBonuses(state);
+  const gain = getClickValue(state, bonuses);
   state.money += gain;
   state.totalMoneyRun += gain;
   state.totalMoneyAllTime += gain;
   state.presses += 1;
 
+  if (hasUpgrade(state, 'upg_neural_link') && state.phase >= 3) {
+    state.rp += 0.5;
+  }
+
   playClickSound(state.soundEnabled, Math.min(state.presses * 0.4, 35));
   spawnFloat(gain);
   pulseLed();
+  pulseButtonRing();
+  processAchievements();
   checkPhasesAndNarrative();
-  updateDynamicUI();
+  updateDynamicUI(state);
 }
 
 function buyGenerator(genId) {
   const gen = GENERATORS.find((g) => g.id === genId);
   if (!gen) return;
-  const info = getBuyInfo(gen);
+  const info = getBuyInfo(state, gen);
   if (info.cantAffordMax || state.money < info.cost) return;
 
   state.money -= info.cost;
@@ -268,15 +192,16 @@ function buyGenerator(genId) {
     state.generators[genId] = { owned: 0, progress: 0, running: false };
   }
   state.generators[genId].owned += info.count;
-  if (hasUpgrade(gen.managerId)) {
+  if (hasUpgrade(state, gen.managerId)) {
     state.generators[genId].running = true;
   }
 
   playUnlockSound(state.soundEnabled);
+  processAchievements();
   checkPhasesAndNarrative();
-  renderGenerators();
-  renderUpgrades();
-  updateDynamicUI();
+  renderGenerators(state, handlers);
+  renderUpgrades(state, handlers);
+  updateDynamicUI(state);
   saveState(state);
 }
 
@@ -286,37 +211,37 @@ function runGenerator(genId) {
   gs.running = true;
   gs.progress = 0;
   playClickSound(state.soundEnabled, 10);
-  updateDynamicUI();
+  updateDynamicUI(state);
 }
 
 function buyUpgradeOrManager(id, cost) {
-  if (hasUpgrade(id) || state.money < cost) return;
+  if (hasUpgrade(state, id) || state.money < cost) return;
   state.money -= cost;
   state.upgrades.push(id);
 
-  // If manager, auto-start generator if owned
   const mgr = MANAGERS.find((m) => m.id === id);
   if (mgr && state.generators[mgr.targetGen]?.owned > 0) {
     state.generators[mgr.targetGen].running = true;
   }
 
   playUnlockSound(state.soundEnabled);
+  processAchievements();
   checkPhasesAndNarrative();
-  renderGenerators();
-  renderUpgrades();
-  updateDynamicUI();
+  renderGenerators(state, handlers);
+  renderUpgrades(state, handlers);
+  updateDynamicUI(state);
   saveState(state);
 }
 
 function startResearch(id) {
-  if (state.activeResearch || hasResearch(id)) return;
+  if (state.activeResearch || hasResearch(state, id)) return;
   const proj = RESEARCH_PROJECTS.find((r) => r.id === id);
   if (!proj || state.rp < proj.rpCost) return;
   state.rp -= proj.rpCost;
   state.activeResearch = { id, elapsed: 0 };
   playUnlockSound(state.soundEnabled);
-  renderResearch();
-  updateDynamicUI();
+  renderResearch(state, handlers);
+  updateDynamicUI(state);
   saveState(state);
 }
 
@@ -326,8 +251,9 @@ function triggerAbility(id) {
   const abState = state.abilities[id] || { activeRemaining: 0, cooldownRemaining: 0 };
   if (abState.cooldownRemaining > 0) return;
 
+  const bonuses = getCrossFloorBonuses(state);
   if (id === 'ab_surge') {
-    const burst = Math.max(getClickValue() * 5, getPassiveMoneyRate() * 15);
+    const burst = Math.max(getClickValue(state, bonuses) * 5, getPassiveMoneyRate(state, bonuses) * 15);
     state.money += burst;
     state.totalMoneyRun += burst;
     state.totalMoneyAllTime += burst;
@@ -339,394 +265,223 @@ function triggerAbility(id) {
     cooldownRemaining: ab.cooldown
   };
   playUnlockSound(state.soundEnabled);
-  renderAbilities();
-  updateDynamicUI();
+  renderAbilities(state, handlers);
+  updateDynamicUI(state);
 }
 
-function getPendingShares() {
-  if (state.totalMoneyRun < 10000) return 0;
-  return Math.floor(Math.sqrt(state.totalMoneyRun / 10000));
-}
+function buyBoardroomPerk(perkId) {
+  const perk = BOARDROOM_PERKS.find((p) => p.id === perkId);
+  if (!perk || hasPerk(state, perkId)) return;
+  if (perk.requires && !hasPerk(state, perk.requires)) return;
+  if (state.shares < perk.cost) return;
 
-function doRestructure() {
-  const pending = getPendingShares();
-  if (pending <= 0) return;
-  const nextShares = state.shares + pending;
-  const preserved = {
-    shares: nextShares,
-    restructures: state.restructures + 1,
-    totalMoneyAllTime: state.totalMoneyAllTime,
-    sinisterRevealed: true,
-    soundEnabled: state.soundEnabled
-  };
-  state = createInitialState(preserved);
-  state.phase = 1;
-  addMemo(`Cycle #${state.restructures} initialized. ${pending} Share(s) retained. The floor remembers.`, 'sinister');
+  state.shares -= perk.cost;
+  state.boardroomPerks.push(perk.id);
+
+  if (perk.unlockFloor && !state.unlockedFloors.includes(perk.unlockFloor)) {
+    state.unlockedFloors.push(perk.unlockFloor);
+    renderFloorSwitcher(state);
+    if (perk.unlockFloor === 'td') {
+      renderTD(state, el.floorTd, handlers);
+    }
+    addMemo(`Facility Portal Unlocked: ${perk.name}`, 'system');
+  } else {
+    addMemo(`Boardroom Directive Acquired: ${perk.name}`, 'system');
+  }
+
   playUnlockSound(state.soundEnabled);
-  renderVisibility();
-  renderGenerators();
-  renderUpgrades();
-  renderResearch();
-  renderAbilities();
-  renderPrestige();
-  updateDynamicUI();
+  renderPrestige(state, handlers);
+  renderResearch(state, handlers);
+  renderGenerators(state, handlers);
+  updateDynamicUI(state);
   saveState(state);
 }
 
-function switchTab(tabName) {
-  state.activeTab = tabName;
-  for (const btn of el.tabBtns) {
-    const active = btn.dataset.tab === tabName;
-    btn.classList.toggle('active', active);
-    btn.setAttribute('aria-selected', active ? 'true' : 'false');
+function doRestructure() {
+  const pending = getPendingShares(state);
+  if (pending <= 0) return;
+
+  const keepVessel = hasPerk(state, 'perk_insider_trading') && hasResearch(state, 'res_vessel');
+  const hasParachute = hasPerk(state, 'perk_golden_parachute');
+  const hasSeverance = hasPerk(state, 'perk_severance');
+
+  const nextShares = state.shares + pending;
+  const preserved = {
+    shares: nextShares,
+    lifetimeShares: Math.max(state.lifetimeShares || 0, state.shares || 0) + pending,
+    restructures: state.restructures + 1,
+    totalMoneyAllTime: state.totalMoneyAllTime,
+    sinisterRevealed: true,
+    soundEnabled: state.soundEnabled,
+    unlockedFloors: state.unlockedFloors,
+    boardroomPerks: state.boardroomPerks,
+    achievements: state.achievements,
+    anomaliesCaught: state.anomaliesCaught,
+    td: {
+      highestWave: state.td?.highestWave || 0,
+      unlockedPads: state.td?.unlockedPads || 4,
+      autoWave: state.td?.autoWave !== undefined ? state.td.autoWave : true,
+      bossMilestonesClaimed: Array.isArray(state.td?.bossMilestonesClaimed)
+        ? [...state.td.bossMilestonesClaimed]
+        : []
+    },
+    rpg: {
+      highestSector: state.rpg?.highestSector || 1,
+      shards: state.rpg?.shards || 0,
+      artifacts: state.rpg?.artifacts || [],
+      equipped: state.rpg?.equipped || []
+    },
+    merge: {
+      catalysts: state.merge?.catalysts || 0,
+      peakTier: state.merge?.peakTier || 0
+    }
+  };
+  state = createInitialState(preserved);
+  state.phase = 1;
+
+  if (keepVessel) {
+    state.completedResearch.push('res_vessel');
   }
-  document.querySelectorAll('.tab-panel').forEach((p) => {
-    p.classList.toggle('active', p.id === `panel-${tabName}`);
-  });
-}
-
-function renderVisibility() {
-  const p = state.phase;
-  document.body.classList.toggle('is-sinister', state.sinisterRevealed);
-
-  el.topBar.classList.toggle('is-hidden', p < 1);
-  el.currencyLabel.classList.toggle('is-hidden', p < 1);
-  el.currencyRates.classList.toggle('is-hidden', p < 1);
-  el.buttonSub.classList.toggle('is-hidden', p < 1);
-  el.memoBox.classList.toggle('is-hidden', p < 1);
-  el.rightColumn.classList.toggle('is-hidden', p < 1);
-  el.workspace.classList.toggle('has-console', p >= 1);
-
-  el.tabBtnUpgrades.classList.toggle('is-hidden', p < 2);
-  el.tabBtnResearch.classList.toggle('is-hidden', p < 3);
-  el.pillRp.classList.toggle('is-hidden', p < 3);
-  el.rateRpSep.classList.toggle('is-hidden', p < 3);
-  el.rateRp.classList.toggle('is-hidden', p < 3);
-
-  const showPrestige = p >= 4 || state.restructures > 0;
-  el.tabBtnPrestige.classList.toggle('is-hidden', !showPrestige);
-  el.pillShares.classList.toggle('is-hidden', state.shares === 0 && !showPrestige);
-
-  const hasAnyAbility = ABILITIES.some((a) => hasResearch(a.unlockResearch));
-  el.abilitiesBar.classList.toggle('is-hidden', !hasAnyAbility);
-
-  if (state.sinisterRevealed) {
-    el.brandName.textContent = 'CONTAINMENT RIG 04';
-    el.phaseTag.textContent = 'COMPLIANCE ACTIVE';
-    el.currencyLabel.textContent = 'COMPLIANCE YIELD';
-    el.memoTitle.textContent = 'FACILITY FEED';
-    el.buttonLabel.textContent = 'ACTUATE';
-  } else {
-    el.brandName.textContent = 'BUTTONCORP™';
-    el.phaseTag.textContent = ['INTERNSHIP', 'OPERATOR', 'MANAGEMENT', 'R&D DIVISION', 'EXECUTIVE'][p] || 'OPERATOR';
-    el.currencyLabel.textContent = 'CORPORATE FUNDS';
-    el.memoTitle.textContent = 'COMPANY MEMO';
-    el.buttonLabel.textContent = 'PRESS';
+  if (hasParachute) {
+    state.money = 500;
+    state.totalMoneyRun = 500;
+    state.phase = 2;
   }
-
-  el.btnSound.textContent = `AUDIO: ${state.soundEnabled ? 'ON' : 'OFF'}`;
-  switchTab(state.activeTab);
-}
-
-function renderGenerators() {
-  el.generatorsList.innerHTML = '';
-  for (const gen of GENERATORS) {
-    const owned = state.generators[gen.id]?.owned || 0;
-    if (owned === 0 && state.totalMoneyRun < gen.unlockMoney) continue;
-
-    const hasMgr = hasUpgrade(gen.managerId);
-    const nextMilestone = MILESTONES.find((m) => owned < m) || 'MAX';
-    const buyInfo = getBuyInfo(gen);
-
-    const card = document.createElement('div');
-    card.className = 'gen-card';
-    card.dataset.genId = gen.id;
-
-    card.innerHTML = `
-      <div class="gen-main">
-        <div class="gen-top">
-          <div class="gen-name-wrap">
-            <span class="gen-name">${gen.name}</span>
-            <span class="gen-owned mono">x${owned}</span>
-            ${hasMgr ? '<span class="gen-manager-tag mono">AUTO</span>' : ''}
-          </div>
-          <span class="gen-yield mono" data-role="yield">${owned > 0 ? fmtMoney(getGenPayout(gen)) + ' / cycle' : fmtMoney(gen.basePayout) + ' base'}</span>
-        </div>
-        <div class="gen-desc">${gen.desc}</div>
-        <div class="gen-progress-row">
-          <div class="gen-bar-track"><div class="gen-bar-fill" data-role="bar"></div></div>
-          <span class="gen-milestone-label mono">Next 2x: ${nextMilestone}</span>
-        </div>
-      </div>
-      <div class="gen-actions">
-        <button class="btn-run mono" type="button" data-role="run" ${owned === 0 || hasMgr ? 'disabled' : ''}>
-          ${hasMgr ? 'AUTOMATED' : 'RUN'}
-        </button>
-        <button class="btn-buy mono" type="button" data-role="buy">
-          BUY ${buyInfo.count} (${fmtMoney(buyInfo.cost)})
-        </button>
-      </div>
-    `;
-
-    card.querySelector('[data-role="run"]').addEventListener('click', () => runGenerator(gen.id));
-    card.querySelector('[data-role="buy"]').addEventListener('click', () => buyGenerator(gen.id));
-    el.generatorsList.appendChild(card);
-  }
-}
-
-function renderUpgrades() {
-  el.managersList.innerHTML = '';
-  el.upgradesList.innerHTML = '';
-
-  let ownedCount = 0;
-  let visibleCount = 0;
-
-  for (const m of MANAGERS) {
-    const genOwned = state.generators[m.targetGen]?.owned || 0;
-    const isOwned = hasUpgrade(m.id);
-    if (genOwned === 0 && !isOwned) continue;
-    visibleCount++;
-    if (isOwned) ownedCount++;
-
-    const card = document.createElement('div');
-    card.className = `upgrade-card${isOwned ? ' is-owned' : ''}`;
-    card.innerHTML = `
-      <div>
-        <div class="upgrade-card-title">${m.name}</div>
-        <div class="upgrade-card-desc">${m.desc}</div>
-      </div>
-    `;
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'btn-buy mono';
-    btn.dataset.upgId = m.id;
-    btn.dataset.upgCost = m.cost;
-    btn.disabled = isOwned || state.money < m.cost;
-    btn.textContent = isOwned ? 'HIRED' : `HIRE (${fmtMoney(m.cost)})`;
-    btn.addEventListener('click', () => buyUpgradeOrManager(m.id, m.cost));
-    card.appendChild(btn);
-    el.managersList.appendChild(card);
-  }
-
-  for (const u of UPGRADES) {
-    const isOwned = hasUpgrade(u.id);
-    if (!isOwned && state.totalMoneyRun < u.unlockMoney) continue;
-    visibleCount++;
-    if (isOwned) ownedCount++;
-
-    const card = document.createElement('div');
-    card.className = `upgrade-card${isOwned ? ' is-owned' : ''}`;
-    card.innerHTML = `
-      <div>
-        <div class="upgrade-card-title">${u.name}</div>
-        <div class="upgrade-card-desc">${u.desc}</div>
-        <div class="upgrade-card-effect mono">${u.effect}</div>
-      </div>
-    `;
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'btn-buy mono';
-    btn.dataset.upgId = u.id;
-    btn.dataset.upgCost = u.cost;
-    btn.disabled = isOwned || state.money < u.cost;
-    btn.textContent = isOwned ? 'OWNED' : `BUY (${fmtMoney(u.cost)})`;
-    btn.addEventListener('click', () => buyUpgradeOrManager(u.id, u.cost));
-    card.appendChild(btn);
-    el.upgradesList.appendChild(card);
-  }
-
-  el.upgradesSummary.textContent = `${ownedCount} / ${visibleCount} OWNED`;
-}
-
-function renderResearch() {
-  if (state.activeResearch) {
-    const proj = RESEARCH_PROJECTS.find((r) => r.id === state.activeResearch.id);
-    const pct = Math.min(100, (state.activeResearch.elapsed / proj.duration) * 100);
-    el.activeResearchBox.innerHTML = `
-      <div class="research-progress-header mono">
-        <span>RESEARCHING: ${proj.name}</span>
-        <span id="active-res-timer">${Math.max(0, proj.duration - state.activeResearch.elapsed).toFixed(1)}s</span>
-      </div>
-      <div class="gen-bar-track"><div class="gen-bar-fill" id="active-res-bar" style="width:${pct}%"></div></div>
-    `;
-  } else {
-    el.activeResearchBox.innerHTML = `<div class="mono muted-text">No active project. Select a research topic below.</div>`;
-  }
-
-  el.researchList.innerHTML = '';
-  for (const proj of RESEARCH_PROJECTS) {
-    const done = hasResearch(proj.id);
-    const prereqMet = !proj.requires || hasResearch(proj.requires);
-    if (!done && !prereqMet) continue;
-
-    const item = document.createElement('div');
-    item.className = `research-item${done ? ' is-done' : ''}`;
-    item.innerHTML = `
-      <div class="research-info">
-        <div class="research-title">${proj.name}</div>
-        <div class="research-desc">${proj.desc}</div>
-        <div class="research-reward mono">${proj.reward}</div>
-      </div>
-    `;
-
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'btn-research mono';
-    btn.dataset.resId = proj.id;
-    btn.dataset.resCost = proj.rpCost;
-    const isRunning = state.activeResearch?.id === proj.id;
-    btn.disabled = done || !!state.activeResearch || state.rp < proj.rpCost;
-    btn.textContent = done ? 'COMPLETED' : isRunning ? 'IN PROGRESS' : `${proj.rpCost} RP • ${proj.duration}s`;
-    btn.addEventListener('click', () => startResearch(proj.id));
-    item.appendChild(btn);
-    el.researchList.appendChild(item);
-  }
-}
-
-function renderAbilities() {
-  el.abilitiesGrid.innerHTML = '';
-  for (const ab of ABILITIES) {
-    if (!hasResearch(ab.unlockResearch)) continue;
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'ability-btn';
-    btn.dataset.abId = ab.id;
-    btn.title = ab.desc;
-    btn.innerHTML = `
-      <span class="ability-name mono">${ab.name}</span>
-      <span class="ability-status mono" data-role="status">READY</span>
-    `;
-    btn.addEventListener('click', () => triggerAbility(ab.id));
-    el.abilitiesGrid.appendChild(btn);
-  }
-}
-
-function renderPrestige() {
-  const pending = getPendingShares();
-  const bonusPct = Math.round((getShareMultiplier() - 1) * 100);
-  const perSharePct = hasResearch('res_vessel') ? 50 : 25;
-
-  el.prestigeCard.innerHTML = `
-    <div class="prestige-title mono">${state.sinisterRevealed ? 'VESSEL TRANSFER (RESTRUCTURE)' : 'QUARTERLY RESTRUCTURING'}</div>
-    <div class="prestige-desc">
-      ${state.sinisterRevealed
-        ? 'Wipe the floor’s memory and begin a new shift. Your Shares remain—each Share permanently amplifies all output by +' + perSharePct + '%.'
-        : 'Reset your current divisions and funds to claim Executive Shares. Each Share permanently boosts all profits by +' + perSharePct + '%.'}
-    </div>
-    <div class="prestige-stats mono">
-      <div><div class="muted-text">CURRENT SHARES</div><div><strong>${state.shares}</strong> (+${bonusPct}%)</div></div>
-      <div><div class="muted-text">CLAIMABLE ON RESET</div><div><strong>+${pending}</strong> Shares</div></div>
-      <div><div class="muted-text">NEXT SHARE AT</div><div>${fmtMoney(Math.pow(pending + 1, 2) * 10000)}</div></div>
-    </div>
-    <button class="btn-prestige mono" id="btn-do-prestige" type="button" ${pending <= 0 ? 'disabled' : ''}>
-      RESTRUCTURE NOW (+${pending} SHARES)
-    </button>
-  `;
-  const btn = document.getElementById('btn-do-prestige');
-  if (btn) btn.addEventListener('click', doRestructure);
-}
-
-function renderMemos() {
-  el.memoFeed.innerHTML = '';
-  for (const m of state.memos) {
-    const row = document.createElement('div');
-    row.className = `memo-entry is-${m.type || 'fun'}`;
-    row.innerHTML = `<span class="memo-time mono">${m.time}</span><span class="memo-text"></span>`;
-    row.querySelector('.memo-text').textContent = m.text;
-    el.memoFeed.appendChild(row);
-  }
-  el.memoCount.textContent = state.memos.length;
-}
-
-function updateDynamicUI() {
-  el.currencyValue.textContent = fmtMoney(state.money);
-  el.rateMoney.textContent = `+${fmtMoney(getPassiveMoneyRate())} / sec`;
-  el.rateRp.textContent = `+${getPassiveRpRate().toFixed(1)} RP / sec`;
-  el.buttonSub.textContent = `+${fmtMoney(getClickValue())}`;
-  el.topRp.textContent = state.rp.toFixed(1);
-  el.topShares.textContent = state.shares;
-  el.researchRpDisplay.textContent = `${state.rp.toFixed(1)} RP`;
-
-  // Update generators progress & buy buttons
-  for (const card of el.generatorsList.querySelectorAll('.gen-card')) {
-    const gen = GENERATORS.find((g) => g.id === card.dataset.genId);
-    if (!gen) continue;
-    const gs = state.generators[gen.id] || { owned: 0, progress: 0, running: false };
-    const cycle = getGenCycleTime(gen);
-    const pct = gs.running ? Math.min(100, (gs.progress / cycle) * 100) : 0;
-    card.querySelector('[data-role="bar"]').style.width = `${pct}%`;
-
-    const buyBtn = card.querySelector('[data-role="buy"]');
-    const info = getBuyInfo(gen);
-    buyBtn.textContent = `BUY ${info.count} (${fmtMoney(info.cost)})`;
-    const canAfford = !info.cantAffordMax && state.money >= info.cost;
-    buyBtn.disabled = !canAfford;
-    buyBtn.classList.toggle('can-afford', canAfford);
-
-    const runBtn = card.querySelector('[data-role="run"]');
-    const hasMgr = hasUpgrade(gen.managerId);
-    runBtn.disabled = gs.owned === 0 || gs.running || hasMgr;
-  }
-
-  // Update upgrade affordability & badge
-  let affordableUpg = 0;
-  for (const btn of el.rightColumn.querySelectorAll('[data-upg-id]')) {
-    const id = btn.dataset.upgId;
-    const cost = Number(btn.dataset.upgCost);
-    const owned = hasUpgrade(id);
-    const canAfford = !owned && state.money >= cost;
-    if (canAfford) affordableUpg++;
-    btn.disabled = !canAfford;
-    btn.classList.toggle('can-afford', canAfford);
-  }
-  el.badgeUpgrades.textContent = affordableUpg;
-  el.badgeUpgrades.classList.toggle('is-hidden', affordableUpg === 0);
-
-  // Update active research bar & buttons
-  if (state.activeResearch) {
-    const proj = RESEARCH_PROJECTS.find((r) => r.id === state.activeResearch.id);
-    const bar = document.getElementById('active-res-bar');
-    const timer = document.getElementById('active-res-timer');
-    if (bar && timer && proj) {
-      bar.style.width = `${Math.min(100, (state.activeResearch.elapsed / proj.duration) * 100)}%`;
-      timer.textContent = `${Math.max(0, proj.duration - state.activeResearch.elapsed).toFixed(1)}s`;
+  if (hasSeverance) {
+    state.generators.intern = { owned: 10, progress: 0, running: true };
+    if (!state.upgrades.includes('mgr_intern')) {
+      state.upgrades.push('mgr_intern');
     }
   }
-  let canStartRes = false;
-  for (const btn of el.researchList.querySelectorAll('[data-res-id]')) {
-    const id = btn.dataset.resId;
-    const cost = Number(btn.dataset.resCost);
-    const canAfford = !hasResearch(id) && !state.activeResearch && state.rp >= cost;
-    if (canAfford) canStartRes = true;
-    btn.disabled = !canAfford;
-    btn.classList.toggle('can-afford', canAfford);
-  }
-  el.badgeResearch.classList.toggle('is-hidden', !canStartRes);
 
-  // Update abilities
-  for (const btn of el.abilitiesGrid.querySelectorAll('.ability-btn')) {
-    const id = btn.dataset.abId;
-    const abState = state.abilities[id] || { activeRemaining: 0, cooldownRemaining: 0 };
-    const statusEl = btn.querySelector('[data-role="status"]');
-    if (abState.activeRemaining > 0) {
-      btn.classList.add('is-active');
-      btn.disabled = true;
-      statusEl.textContent = `ACTIVE ${abState.activeRemaining.toFixed(0)}s`;
-    } else if (abState.cooldownRemaining > 0) {
-      btn.classList.remove('is-active');
-      btn.disabled = true;
-      statusEl.textContent = `CD ${abState.cooldownRemaining.toFixed(0)}s`;
+  clearAnomalyFloater();
+  anomalyActiveRemaining = 0;
+  anomalySpawnRemaining = getNextAnomalyInterval();
+
+  addMemo(`Cycle #${state.restructures} initialized. +${pending} Share(s) retained. The floor remembers.`, 'sinister');
+  playUnlockSound(state.soundEnabled);
+  processAchievements();
+  checkPhasesAndNarrative();
+  renderAll(state, handlers);
+  if (state.unlockedFloors.includes('td')) {
+    renderTD(state, el.floorTd, handlers);
+  }
+  updateDynamicUI(state);
+  saveState(state);
+}
+
+function getNextAnomalyInterval() {
+  const base = 45 + Math.random() * 45;
+  return hasPerk(state, 'perk_anomaly_attractor') ? base * 0.5 : base;
+}
+
+function handleAnomalyClick() {
+  anomalyActiveRemaining = 0;
+  anomalySpawnRemaining = getNextAnomalyInterval();
+  state.anomaliesCaught = (state.anomaliesCaught || 0) + 1;
+
+  const bonuses = getCrossFloorBonuses(state);
+  const rewardMult = hasResearch(state, 'res_anomaly_harness') ? 2 : 1;
+
+  if (!state.sinisterRevealed) {
+    if (Math.random() < 0.5) {
+      const burst = Math.max(getClickValue(state, bonuses) * 25, getPassiveMoneyRate(state, bonuses) * 30) * rewardMult;
+      state.money += burst;
+      state.totalMoneyRun += burst;
+      state.totalMoneyAllTime += burst;
+      spawnFloat(burst);
+      addMemo(`Urgent Executive Memo — Quarterly Bonus: +${fmtMoney(burst)}`, 'fun');
     } else {
-      btn.classList.remove('is-active');
-      btn.disabled = false;
-      statusEl.textContent = 'READY';
+      state.anomalyBuffs.clickMult = 5;
+      state.anomalyBuffs.clickRemaining = 20;
+      state.anomalyBuffs.outputMult = 2;
+      state.anomalyBuffs.outputRemaining = 20;
+      addMemo('Urgent Executive Memo — Caffeine Surge: 5x click & 2x division output for 20s!', 'fun');
     }
+  } else {
+    const roll = Math.random();
+    if (roll < 0.34) {
+      state.anomalyBuffs.outputMult = 7;
+      state.anomalyBuffs.outputRemaining = 15;
+      addMemo('Containment Anomaly — Reality Fracture: 7x all output for 15s!', 'sinister');
+    } else if (roll < 0.67) {
+      const moneyBurst = Math.max(getClickValue(state, bonuses) * 30, getPassiveMoneyRate(state, bonuses) * 45) * rewardMult;
+      const rpBurst = Math.max(10 * rewardMult, getPassiveRpRate(state, bonuses) * 20 * rewardMult);
+      state.money += moneyBurst;
+      state.totalMoneyRun += moneyBurst;
+      state.totalMoneyAllTime += moneyBurst;
+      if (state.phase >= 3) state.rp += rpBurst;
+      spawnFloat(moneyBurst);
+      addMemo(`Containment Anomaly — Data Leak: +${fmtMoney(moneyBurst)}${state.phase >= 3 ? ` & +${fmtNumber(rpBurst, 1)} RP` : ''}`, 'sinister');
+    } else {
+      for (const id of Object.keys(state.abilities)) {
+        if (state.abilities[id].cooldownRemaining > 0) {
+          state.abilities[id].cooldownRemaining *= 0.5;
+        }
+      }
+      addMemo('Containment Anomaly — Rift Echo: All Active Protocol cooldowns reduced by 50%!', 'sinister');
+    }
+  }
+
+  playAnomalySound(state.soundEnabled, !!state.sinisterRevealed);
+  processAchievements();
+  checkPhasesAndNarrative();
+  updateDynamicUI(state);
+  saveState(state);
+}
+
+function applyOfflineProgress() {
+  const bonuses = getCrossFloorBonuses(state);
+  const offline = calculateOfflineEarnings(state, Date.now(), bonuses);
+  state.lastTick = Date.now();
+  let tdCleared = 0;
+  if (state.unlockedFloors.includes('td') && offline.elapsedSec > 0) {
+    const tdRes = tickTD(state, offline.elapsedSec * (offline.efficiency || 0.25), bonuses);
+    tdCleared = tdRes.wavesCleared;
+  }
+  if (offline.elapsedSec > 60 && (offline.moneyEarned > 0 || offline.rpEarned > 0 || tdCleared > 0)) {
+    state.money += offline.moneyEarned;
+    state.totalMoneyRun += offline.moneyEarned;
+    state.totalMoneyAllTime += offline.moneyEarned;
+    state.rp += offline.rpEarned;
+    processAchievements();
+    checkPhasesAndNarrative();
+    if (state.unlockedFloors.includes('td')) {
+      renderTD(state, el.floorTd, handlers);
+    }
+    showOfflineModal(offline);
+    saveState(state);
   }
 }
 
 function tick(now) {
   const dt = Math.min((now - lastFrame) / 1000, 1);
   lastFrame = now;
+
+  decayButtonRing(dt);
+
+  const bonuses = getCrossFloorBonuses(state);
+
+  // Tick temporary anomaly buffs
+  if (state.anomalyBuffs) {
+    if (state.anomalyBuffs.outputRemaining > 0) {
+      state.anomalyBuffs.outputRemaining = Math.max(0, state.anomalyBuffs.outputRemaining - dt);
+      if (state.anomalyBuffs.outputRemaining === 0) state.anomalyBuffs.outputMult = 1;
+    }
+    if (state.anomalyBuffs.clickRemaining > 0) {
+      state.anomalyBuffs.clickRemaining = Math.max(0, state.anomalyBuffs.clickRemaining - dt);
+      if (state.anomalyBuffs.clickRemaining === 0) state.anomalyBuffs.clickMult = 1;
+    }
+  }
+
+  // Tick HR Algorithm auto-manager hiring
+  if (hasPerk(state, 'perk_auto_mgr')) {
+    for (const m of MANAGERS) {
+      if (!hasUpgrade(state, m.id) && (state.generators[m.targetGen]?.owned || 0) > 0 && state.money >= m.cost) {
+        buyUpgradeOrManager(m.id, m.cost);
+      }
+    }
+  }
 
   // Tick abilities
   let abilityChanged = false;
@@ -743,27 +498,27 @@ function tick(now) {
 
   // Tick generators
   let earnedCycle = false;
+  const rpMult = getRpMultiplier(state, bonuses);
   for (const gen of GENERATORS) {
     const gs = state.generators[gen.id];
     if (!gs || gs.owned === 0) continue;
-    const hasMgr = hasUpgrade(gen.managerId);
+    const hasMgr = hasUpgrade(state, gen.managerId);
     if (hasMgr) gs.running = true;
     if (!gs.running) continue;
 
-    const cycle = getGenCycleTime(gen);
+    const cycle = getGenCycleTime(state, gen, bonuses);
     gs.progress += dt;
     if (gs.progress >= cycle) {
       const cycles = Math.floor(gs.progress / cycle);
       gs.progress = hasMgr ? gs.progress % cycle : 0;
       if (!hasMgr) gs.running = false;
 
-      const payout = getGenPayout(gen) * cycles;
+      const payout = getGenPayout(state, gen, bonuses) * cycles;
       state.money += payout;
       state.totalMoneyRun += payout;
       state.totalMoneyAllTime += payout;
 
       if (state.phase >= 3) {
-        const rpMult = isAbilityActive('ab_syphon') ? 2 : 1;
         state.rp += gen.rpPerCycle * gs.owned * cycles * rpMult;
       }
       earnedCycle = true;
@@ -774,25 +529,89 @@ function tick(now) {
   if (state.activeResearch) {
     const proj = RESEARCH_PROJECTS.find((r) => r.id === state.activeResearch.id);
     if (proj) {
+      const dur = getResearchDuration(state, proj);
       state.activeResearch.elapsed += dt;
-      if (state.activeResearch.elapsed >= proj.duration) {
+      if (state.activeResearch.elapsed >= dur) {
         state.completedResearch.push(proj.id);
         state.activeResearch = null;
-        addMemo(`Research complete: ${proj.name} — ${proj.reward}`, proj.id === 'res_compliance' ? 'sinister' : 'system');
+        addMemo(`Research complete: ${proj.name} — ${proj.reward}`, proj.branch === 'containment' ? 'sinister' : 'system');
         playUnlockSound(state.soundEnabled);
+        processAchievements();
         checkPhasesAndNarrative();
-        renderResearch();
-        renderAbilities();
-        renderPrestige();
+        renderResearch(state, handlers);
+        renderAbilities(state, handlers);
+        renderPrestige(state, handlers);
+      }
+    }
+  }
+
+  // Tick Golden Memo / Containment Anomaly events
+  if (state.phase >= 1) {
+    if (anomalyActiveRemaining > 0) {
+      anomalyActiveRemaining = Math.max(0, anomalyActiveRemaining - dt);
+      if (anomalyActiveRemaining === 0) {
+        clearAnomalyFloater();
+        anomalySpawnRemaining = getNextAnomalyInterval();
+      }
+    } else {
+      anomalySpawnRemaining -= dt;
+      if (anomalySpawnRemaining <= 0) {
+        anomalyActiveRemaining = hasPerk(state, 'perk_anomaly_attractor') ? 18 : 12;
+        spawnAnomalyFloater(!!state.sinisterRevealed, handleAnomalyClick);
       }
     }
   }
 
   if (earnedCycle || abilityChanged) {
+    processAchievements();
     checkPhasesAndNarrative();
   }
 
-  updateDynamicUI();
+  // Tick Floor B2: Security Perimeter (TD)
+  if (state.unlockedFloors.includes('td')) {
+    const tdRes = tickTD(state, dt, bonuses);
+    if (tdRes.wavesCleared > 0) {
+      if (tdRes.bossCleared) {
+        addMemo('Perimeter Boss neutralized! +Intel & Executive Shares awarded.', 'sinister');
+        playUnlockSound(state.soundEnabled);
+      }
+      processAchievements();
+      checkPhasesAndNarrative();
+      renderPrestige(state, handlers);
+      saveState(state);
+    }
+  }
+
+  // Tick Floor B4: Field Ops (RPG)
+  if (state.unlockedFloors.includes('rpg')) {
+    const rpgRes = tickRPG(state, dt, bonuses);
+    if (rpgRes.bossCleared) {
+      addMemo(`Sector ${state.rpg.highestSector} cleared! Containment Artifact recovered.`, 'eerie');
+      playUnlockSound(state.soundEnabled);
+      renderRPG(state, el.floorRpg);
+      renderPrestige(state, handlers);
+      saveState(state);
+    }
+  }
+
+  // Tick Floor B6: Synthesis Forge (Merge)
+  if (state.unlockedFloors.includes('merge')) {
+    const mergeRes = tickMerge(state, dt, bonuses);
+    if (mergeRes.merged || mergeRes.spawned) {
+      if (state.activeFloor === 'merge') {
+        updateMergeUI(state, el.floorMerge);
+      }
+    }
+  }
+
+  updateDynamicUI(state);
+  if (state.activeFloor === 'td') {
+    updateTDUI(state, el.floorTd);
+  } else if (state.activeFloor === 'rpg') {
+    updateRPGUI(state, el.floorRpg);
+  } else if (state.activeFloor === 'merge') {
+    updateMergeUI(state, el.floorMerge);
+  }
 
   if (now - lastSave > 5000) {
     state.lastTick = Date.now();
@@ -803,67 +622,192 @@ function tick(now) {
   requestAnimationFrame(tick);
 }
 
-// Event Listeners
-el.mainButton.addEventListener('click', handlePress);
-
-el.tabBtns.forEach((btn) => {
-  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
-});
-
-el.buyModeBtns.forEach((btn) => {
-  btn.addEventListener('click', () => {
-    state.buyMode = btn.dataset.mode;
-    el.buyModeBtns.forEach((b) => b.classList.toggle('active', b === btn));
-    updateDynamicUI();
-  });
-});
-
-el.btnSound.addEventListener('click', () => {
-  state.soundEnabled = !state.soundEnabled;
-  renderVisibility();
-  saveState(state);
-});
-
-el.btnReset.addEventListener('click', () => {
-  if (!confirm('Reset all ButtonCorp™ progress and Shares?')) return;
-  state = resetAllState();
-  renderVisibility();
-  renderGenerators();
-  renderUpgrades();
-  renderResearch();
-  renderAbilities();
-  renderPrestige();
-  renderMemos();
-  updateDynamicUI();
-});
-
-document.addEventListener('keydown', (e) => {
-  if (e.code === 'Space' && !e.repeat) {
-    const active = document.activeElement;
-    if (active && active.tagName === 'BUTTON' && active !== el.mainButton) return;
-    e.preventDefault();
-    el.mainButton.classList.add('is-pressed');
-    handlePress();
+function handleFloorSubAction(action) {
+  if (action === 'return-desk') {
+    switchFloor(state, 'desk');
+    saveState(state);
+    return;
   }
-});
-
-document.addEventListener('keyup', (e) => {
-  if (e.code === 'Space') el.mainButton.classList.remove('is-pressed');
-});
-
-window.addEventListener('beforeunload', () => {
-  state.lastTick = Date.now();
+  playClickSound(state.soundEnabled);
+  updateDynamicUI(state);
+  renderPrestige(state, handlers);
   saveState(state);
-});
+}
+
+function handleTDAction(action) {
+  if (!action) return;
+  if (action.type === 'return-desk') {
+    switchFloor(state, 'desk');
+    saveState(state);
+    return;
+  }
+  let changed = false;
+  if (action.type === 'buy-pad') {
+    changed = tdBuyPad(state);
+    if (changed) playUnlockSound(state.soundEnabled);
+  } else if (action.type === 'place-turret') {
+    changed = tdPlaceTurret(state, action.turretType);
+    if (changed) playClickSound(state.soundEnabled);
+  } else if (action.type === 'upgrade-turret') {
+    changed = tdUpgradeTurret(state, action.turretIdx);
+    if (changed) playUnlockSound(state.soundEnabled);
+  } else if (action.type === 'salvage-turret') {
+    changed = tdSalvageTurret(state, action.turretIdx);
+    if (changed) playClickSound(state.soundEnabled);
+  } else if (action === 'overcharge' || action.type === 'overcharge') {
+    changed = tdTriggerOvercharge(state);
+    if (changed) playAnomalySound(state.soundEnabled, true);
+  } else if (action.type === 'toggle-auto') {
+    changed = tdToggleAutoWave(state);
+  } else if (action.type === 'next-wave') {
+    changed = tdAdvanceWave(state);
+  } else if (action.type === 'select-pad') {
+    changed = true;
+  }
+  if (changed) {
+    renderTD(state, el.floorTd, handlers);
+    updateDynamicUI(state);
+    saveState(state);
+  }
+}
+
+function bindEvents() {
+  el.mainButton.addEventListener('click', handlePress);
+  bindTDEvents(el.floorTd, () => state, handleTDAction);
+  bindRPGEvents(el.floorRpg, () => state, handleFloorSubAction);
+  bindMergeEvents(el.floorMerge, () => state, handleFloorSubAction);
+
+  el.tabBtns.forEach((btn) => {
+    btn.addEventListener('click', () => switchTab(state, btn.dataset.tab));
+  });
+
+  el.elevatorBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const floorId = btn.dataset.floor;
+      if (switchFloor(state, floorId)) {
+        if (floorId === 'td') {
+          renderTD(state, el.floorTd, handlers);
+        } else if (floorId === 'rpg') {
+          renderRPG(state, el.floorRpg);
+        } else if (floorId === 'merge') {
+          renderMerge(state, el.floorMerge);
+        }
+        saveState(state);
+      }
+    });
+  });
+
+  el.returnDeskBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      switchFloor(state, 'desk');
+      saveState(state);
+    });
+  });
+
+  el.buyModeBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.buyMode = btn.dataset.mode;
+      el.buyModeBtns.forEach((b) => b.classList.toggle('active', b === btn));
+      updateDynamicUI(state);
+    });
+  });
+
+  el.btnSound.addEventListener('click', () => {
+    state.soundEnabled = !state.soundEnabled;
+    renderVisibility(state);
+    saveState(state);
+  });
+
+  el.btnReset.addEventListener('click', () => openModal('modal-reset'));
+
+  el.btnResetConfirm.addEventListener('click', () => {
+    clearAnomalyFloater();
+    anomalyActiveRemaining = 0;
+    anomalySpawnRemaining = getNextAnomalyInterval();
+    state = resetAllState();
+    closeModal('modal-reset');
+    renderAll(state, handlers);
+    updateDynamicUI(state);
+  });
+
+  el.btnSaveModal.addEventListener('click', () => {
+    showExportImportModal(exportSave(state));
+  });
+
+  el.btnSaveCopy.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(el.saveExportText.value);
+      el.saveCopyStatus.textContent = 'Copied!';
+    } catch {
+      el.saveExportText.select();
+      el.saveCopyStatus.textContent = 'Selected for copy';
+    }
+  });
+
+  el.btnSaveImport.addEventListener('click', () => {
+    const res = importSave(el.saveImportText.value);
+    if (!res.ok) {
+      el.saveImportStatus.textContent = res.error;
+      el.saveImportStatus.classList.add('is-error');
+      return;
+    }
+    state = res.state;
+    state.lastTick = Date.now();
+    saveState(state);
+    el.saveImportStatus.textContent = 'Imported!';
+    el.saveImportStatus.classList.remove('is-error');
+    renderAll(state, handlers);
+    if (state.unlockedFloors.includes('td')) renderTD(state, el.floorTd, handlers);
+    if (state.unlockedFloors.includes('rpg')) renderRPG(state, el.floorRpg);
+    if (state.unlockedFloors.includes('merge')) renderMerge(state, el.floorMerge);
+    updateDynamicUI(state);
+    setTimeout(() => closeModal('modal-save'), 350);
+  });
+
+  document.querySelectorAll('[data-close-modal]').forEach((btn) => {
+    btn.addEventListener('click', () => closeModal(btn.dataset.closeModal));
+  });
+
+  document.querySelectorAll('.modal-backdrop').forEach((backdrop) => {
+    backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop) backdrop.classList.add('is-hidden');
+    });
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeAllModals();
+      return;
+    }
+    if (e.code === 'Space' && !e.repeat) {
+      const active = document.activeElement;
+      if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT')) return;
+      if (active && active.tagName === 'BUTTON' && active !== el.mainButton) return;
+      e.preventDefault();
+      el.mainButton.classList.add('is-pressed');
+      handlePress();
+    }
+  });
+
+  document.addEventListener('keyup', (e) => {
+    if (e.code === 'Space') el.mainButton.classList.remove('is-pressed');
+  });
+
+  window.addEventListener('beforeunload', () => {
+    state.lastTick = Date.now();
+    saveState(state);
+  });
+}
 
 // Boot
+cacheElements();
+bindEvents();
+processAchievements();
 checkPhasesAndNarrative();
-renderVisibility();
-renderGenerators();
-renderUpgrades();
-renderResearch();
-renderAbilities();
-renderPrestige();
-renderMemos();
-updateDynamicUI();
+renderAll(state, handlers);
+if (state.unlockedFloors.includes('td')) renderTD(state, el.floorTd, handlers);
+if (state.unlockedFloors.includes('rpg')) renderRPG(state, el.floorRpg);
+if (state.unlockedFloors.includes('merge')) renderMerge(state, el.floorMerge);
+applyOfflineProgress();
+updateDynamicUI(state);
 requestAnimationFrame(tick);

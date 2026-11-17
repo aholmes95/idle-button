@@ -26,12 +26,43 @@
       </div>
 
       <div class="top-controls">
+        <button class="icon-btn mono" id="btn-save-modal" type="button">SAVE</button>
         <button class="icon-btn mono" id="btn-sound" type="button">AUDIO: ON</button>
         <button class="icon-btn mono" id="btn-reset" type="button">RESET</button>
       </div>
     </header>
 
-    <!-- Main 2-Column Workspace -->
+    <!-- Facility Elevator / Portal Bar -->
+    <nav class="elevator-bar is-hidden" id="elevator-bar" aria-label="Facility Floors">
+      <button class="elevator-btn mono active" type="button" data-floor="desk" id="floor-btn-desk"
+        title="1F: Executive Desk — Core Button Station, Operations, Upgrades &amp; R&amp;D">
+        <span class="floor-code">1F</span>
+        <span class="floor-name">DESK</span>
+      </button>
+      <button class="elevator-btn mono is-locked" type="button" data-floor="td" id="floor-btn-td"
+        title="B2: Security Perimeter (Locked) — Idle Tower Defense. Unlock via Boardroom Tree."
+        aria-disabled="true">
+        <span class="floor-code">B2</span>
+        <span class="floor-name">SECURITY</span>
+        <span class="floor-lock" aria-hidden="true">LOCKED</span>
+      </button>
+      <button class="elevator-btn mono is-locked" type="button" data-floor="rpg" id="floor-btn-rpg"
+        title="B4: Field Ops (Locked) — Squad Auto-Battler &amp; Artifacts. Unlock via Boardroom Tree."
+        aria-disabled="true">
+        <span class="floor-code">B4</span>
+        <span class="floor-name">FIELD OPS</span>
+        <span class="floor-lock" aria-hidden="true">LOCKED</span>
+      </button>
+      <button class="elevator-btn mono is-locked" type="button" data-floor="merge" id="floor-btn-merge"
+        title="B6: Synthesis Forge (Locked) — Actuator Merge Grid. Unlock via Boardroom Tree."
+        aria-disabled="true">
+        <span class="floor-code">B6</span>
+        <span class="floor-name">FORGE</span>
+        <span class="floor-lock" aria-hidden="true">LOCKED</span>
+      </button>
+    </nav>
+
+    <!-- Main 2-Column Workspace (1F: DESK) -->
     <main class="workspace" id="workspace">
       <!-- Left Column: Button, Balance, Active Abilities, Ticker -->
       <section class="left-column" aria-label="Button Station">
@@ -49,6 +80,10 @@
           <div class="housing-screws" aria-hidden="true">
             <span></span><span></span><span></span><span></span>
           </div>
+          <svg class="button-charge-ring" viewBox="0 0 180 180" aria-hidden="true">
+            <circle class="ring-track" cx="90" cy="90" r="80" />
+            <circle class="ring-fill" id="button-ring-fill" cx="90" cy="90" r="80" />
+          </svg>
           <button class="main-button" id="main-button" type="button" aria-label="Press button">
             <span class="button-cap">
               <span class="button-label mono" id="button-label">PRESS</span>
@@ -86,6 +121,9 @@
           <button class="tab-btn mono is-hidden" data-tab="research" id="tab-btn-research" role="tab" aria-selected="false">
             R&amp;D LAB <span class="tab-badge is-hidden" id="badge-research">!</span>
           </button>
+          <button class="tab-btn mono" data-tab="achievements" id="tab-btn-achievements" role="tab" aria-selected="false">
+            ACHIEVEMENTS <span class="tab-badge is-hidden" id="badge-achievements">0</span>
+          </button>
           <button class="tab-btn mono is-hidden" data-tab="prestige" id="tab-btn-prestige" role="tab" aria-selected="false">
             RESTRUCTURE
           </button>
@@ -115,6 +153,14 @@
             <div class="upgrades-grid" id="managers-list"></div>
             <div class="upgrade-group-label mono">EQUIPMENT &amp; SYNERGY</div>
             <div class="upgrades-grid" id="upgrades-list"></div>
+
+            <details class="owned-drawer is-hidden" id="upgrades-owned-drawer">
+              <summary class="drawer-summary mono">
+                <span>OWNED UPGRADES &amp; MANAGERS (<span id="upgrades-owned-count">0</span>)</span>
+                <span class="drawer-chevron" aria-hidden="true">▾</span>
+              </summary>
+              <div class="upgrades-grid drawer-content" id="upgrades-owned-list"></div>
+            </details>
           </div>
         </div>
 
@@ -128,14 +174,121 @@
             <div class="mono muted-text">No active project. Select a research topic below.</div>
           </div>
           <div class="research-list" id="research-list"></div>
+          <details class="owned-drawer is-hidden" id="research-completed-drawer">
+            <summary class="drawer-summary mono">
+              <span>COMPLETED PROJECTS (<span id="research-completed-count">0</span>)</span>
+              <span class="drawer-chevron" aria-hidden="true">▾</span>
+            </summary>
+            <div class="research-list drawer-content" id="research-completed-list"></div>
+          </details>
         </div>
 
-        <!-- Panel 4: Prestige / Restructure -->
+        <!-- Panel 4: Achievements -->
+        <div class="tab-panel" id="panel-achievements" role="tabpanel">
+          <div class="panel-toolbar">
+            <span class="toolbar-title mono">ACHIEVEMENTS</span>
+            <span class="toolbar-meta mono" id="achievements-summary">0 / 0 (+0% OUTPUT)</span>
+          </div>
+          <div class="achievements-grid" id="achievements-list"></div>
+        </div>
+
+        <!-- Panel 5: Prestige / Restructure & Boardroom -->
         <div class="tab-panel" id="panel-prestige" role="tabpanel">
           <div class="prestige-card" id="prestige-card"></div>
+          <div class="boardroom-section" id="boardroom-section">
+            <div class="panel-toolbar">
+              <span class="toolbar-title mono">BOARDROOM SKILL TREE</span>
+              <span class="toolbar-meta mono" id="boardroom-shares-display">0 SPENDABLE SHARES</span>
+            </div>
+            <div class="boardroom-grid" id="boardroom-grid"></div>
+          </div>
         </div>
       </section>
     </main>
+
+    <!-- Floor Mount Containers (B2, B4, B6) -->
+    <section class="floor-container is-hidden" id="floor-td" data-floor-panel="td" aria-label="Floor B2: Security Perimeter">
+      <div class="floor-placeholder">
+        <div class="floor-placeholder-badge mono">B2 // SECURITY PERIMETER</div>
+        <h2 class="floor-placeholder-title">Containment Perimeter Offline</h2>
+        <p class="floor-placeholder-desc">Automated turret grid and breach defense systems are scheduled for Milestone M3. Unlock access via the Boardroom Skill Tree.</p>
+        <button class="icon-btn mono floor-return-btn" type="button" data-return-desk>RETURN TO 1F: DESK</button>
+      </div>
+    </section>
+
+    <section class="floor-container is-hidden" id="floor-rpg" data-floor-panel="rpg" aria-label="Floor B4: Field Ops">
+      <div class="floor-placeholder">
+        <div class="floor-placeholder-badge mono">B4 // FIELD OPS</div>
+        <h2 class="floor-placeholder-title">Field Ops Dispatch Offline</h2>
+        <p class="floor-placeholder-desc">Operative squad deployment and artifact recovery sectors are scheduled for Milestone M4. Unlock access via the Boardroom Skill Tree.</p>
+        <button class="icon-btn mono floor-return-btn" type="button" data-return-desk>RETURN TO 1F: DESK</button>
+      </div>
+    </section>
+
+    <section class="floor-container is-hidden" id="floor-merge" data-floor-panel="merge" aria-label="Floor B6: Synthesis Forge">
+      <div class="floor-placeholder">
+        <div class="floor-placeholder-badge mono">B6 // SYNTHESIS FORGE</div>
+        <h2 class="floor-placeholder-title">Synthesis Forge Offline</h2>
+        <p class="floor-placeholder-desc">Actuator core synthesis matrix and catalyst forging are scheduled for Milestone M5. Unlock access via the Boardroom Skill Tree.</p>
+        <button class="icon-btn mono floor-return-btn" type="button" data-return-desk>RETURN TO 1F: DESK</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- Reset Confirmation Modal -->
+  <div class="modal-backdrop is-hidden" id="modal-reset" role="dialog" aria-modal="true" aria-labelledby="modal-reset-title">
+    <div class="modal-card">
+      <div class="modal-header">
+        <span class="modal-title mono" id="modal-reset-title">CONFIRM HARD RESET</span>
+        <button class="modal-close mono" type="button" data-close-modal="modal-reset" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <p>Reset all ButtonCorp™ progress, divisions, research, and Executive Shares? This action cannot be undone.</p>
+      </div>
+      <div class="modal-actions">
+        <button class="icon-btn mono" id="btn-reset-cancel" type="button" data-close-modal="modal-reset">CANCEL</button>
+        <button class="btn-danger mono" id="btn-reset-confirm" type="button">WIPE ALL DATA</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Save Export / Import Modal -->
+  <div class="modal-backdrop is-hidden" id="modal-save" role="dialog" aria-modal="true" aria-labelledby="modal-save-title">
+    <div class="modal-card modal-card-wide">
+      <div class="modal-header">
+        <span class="modal-title mono" id="modal-save-title">SAVE DATA // EXPORT &amp; IMPORT</span>
+        <button class="modal-close mono" type="button" data-close-modal="modal-save" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <label class="modal-label mono" for="save-export-text">EXPORT SAVE STRING</label>
+        <textarea class="modal-textarea mono" id="save-export-text" rows="3" readonly></textarea>
+        <div class="modal-inline-actions">
+          <button class="icon-btn mono" id="btn-save-copy" type="button">COPY TO CLIPBOARD</button>
+          <span class="modal-status mono" id="save-copy-status"></span>
+        </div>
+
+        <label class="modal-label mono" for="save-import-text">IMPORT SAVE STRING</label>
+        <textarea class="modal-textarea mono" id="save-import-text" rows="3" placeholder="Paste exported save string here..."></textarea>
+        <div class="modal-inline-actions">
+          <button class="btn-accent mono" id="btn-save-import" type="button">IMPORT &amp; LOAD</button>
+          <span class="modal-status mono" id="save-import-status"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Offline Shift Summary Modal -->
+  <div class="modal-backdrop is-hidden" id="modal-offline" role="dialog" aria-modal="true" aria-labelledby="modal-offline-title">
+    <div class="modal-card">
+      <div class="modal-header">
+        <span class="modal-title mono" id="modal-offline-title">OFFLINE SHIFT SUMMARY</span>
+        <button class="modal-close mono" type="button" data-close-modal="modal-offline" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body" id="offline-summary-body"></div>
+      <div class="modal-actions">
+        <button class="btn-accent mono" id="btn-offline-close" type="button" data-close-modal="modal-offline">RESUME SHIFT</button>
+      </div>
+    </div>
   </div>
 
   <script type="module" src="js/game.js"></script>
