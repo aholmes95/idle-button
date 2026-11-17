@@ -1,18 +1,38 @@
-const SAVE_KEY = 'idle_button_save_v1';
+const SAVE_KEY = 'idle_button_v2_save';
 
-export function createInitialState() {
+export function createInitialState(preserved = {}) {
   return {
     money: 0,
-    totalMoney: 0,
+    totalMoneyRun: 0,
+    totalMoneyAllTime: preserved.totalMoneyAllTime || 0,
+    rp: 0,
     presses: 0,
-    autoPresses: 0,
-    depthMeters: 0,
-    phase: 0, // 0: bare button, 1: log, 2: upgrades, 3: telemetry, 4: casing/signal
-    casingInspected: false,
-    soundEnabled: true,
-    upgrades: {}, // { [id]: count }
-    triggeredBeats: [], // array of narrative beat IDs already shown
-    logs: [], // { time, text, type }
+    phase: 0, // 0: bare button, 1: memo+ops, 2: upgrades, 3: research, 4: prestige/sinister
+    sinisterRevealed: preserved.sinisterRevealed || false,
+    soundEnabled: preserved.soundEnabled !== undefined ? preserved.soundEnabled : true,
+    buyMode: '1', // '1', '10', 'max'
+    activeTab: 'operations',
+
+    // Prestige
+    shares: preserved.shares || 0,
+    restructures: preserved.restructures || 0,
+
+    // Generators: { [id]: { owned, progress, running } }
+    generators: {},
+
+    // Purchased upgrade & manager IDs
+    upgrades: [],
+
+    // Research
+    completedResearch: [],
+    activeResearch: null, // { id, elapsed }
+
+    // Active abilities: { [id]: { activeRemaining, cooldownRemaining } }
+    abilities: {},
+
+    // Narrative
+    triggeredBeats: [],
+    memos: [],
     lastTick: Date.now()
   };
 }
@@ -25,9 +45,12 @@ export function loadState() {
     return {
       ...createInitialState(),
       ...parsed,
-      upgrades: parsed.upgrades || {},
+      generators: parsed.generators || {},
+      upgrades: parsed.upgrades || [],
+      completedResearch: parsed.completedResearch || [],
+      abilities: parsed.abilities || {},
       triggeredBeats: parsed.triggeredBeats || [],
-      logs: parsed.logs || []
+      memos: parsed.memos || []
     };
   } catch {
     return createInitialState();
@@ -42,7 +65,7 @@ export function saveState(state) {
   }
 }
 
-export function clearState() {
+export function resetAllState() {
   try {
     localStorage.removeItem(SAVE_KEY);
   } catch {

@@ -3,40 +3,46 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Idle Button — Unit 04-B</title>
-  <meta name="description" content="Press the button. Earn currency. Uncover what lies beneath." />
+  <title>Idle Button — ButtonCorp™</title>
+  <meta name="description" content="Press the button, build your ButtonCorp™ empire, research breakthroughs, and uncover what is really happening beneath the office." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <div class="app-shell" id="app-shell">
-    <!-- Top Status Bar (hidden until Phase 1) -->
+    <!-- Top Header (hidden at very start) -->
     <header class="top-bar is-hidden" id="top-bar">
-      <div class="unit-id">
+      <div class="brand-cluster">
         <span class="status-led" id="status-led" aria-hidden="true"></span>
-        <span class="mono">UNIT 04-B</span>
-        <span class="phase-tag mono" id="phase-tag">STANDBY</span>
+        <span class="brand-name mono" id="brand-name">BUTTONCORP™</span>
+        <span class="phase-tag mono" id="phase-tag">INTERNSHIP</span>
       </div>
+
+      <div class="top-stats mono">
+        <span class="stat-pill is-hidden" id="pill-rp">RP: <strong id="top-rp">0</strong></span>
+        <span class="stat-pill is-hidden" id="pill-shares">SHARES: <strong id="top-shares">0</strong></span>
+      </div>
+
       <div class="top-controls">
-        <button class="icon-btn mono" id="btn-sound" type="button" title="Toggle mechanical audio">
-          AUDIO: ON
-        </button>
-        <button class="icon-btn mono" id="btn-reset" type="button" title="Reset progress">
-          RESET
-        </button>
+        <button class="icon-btn mono" id="btn-sound" type="button">AUDIO: ON</button>
+        <button class="icon-btn mono" id="btn-reset" type="button">RESET</button>
       </div>
     </header>
 
-    <!-- Main Workspace -->
+    <!-- Main 2-Column Workspace -->
     <main class="workspace" id="workspace">
-      <!-- Left / Center Column: The Button & Currency -->
-      <section class="primary-column" aria-label="Primary Actuator">
-        <div class="currency-display">
-          <div class="currency-label mono is-hidden" id="currency-label">BALANCE</div>
+      <!-- Left Column: Button, Balance, Active Abilities, Ticker -->
+      <section class="left-column" aria-label="Button Station">
+        <div class="currency-card">
+          <div class="currency-label mono is-hidden" id="currency-label">CORPORATE FUNDS</div>
           <div class="currency-value mono" id="currency-value">$0.00</div>
-          <div class="currency-rate mono is-hidden" id="currency-rate">+$0.00 / sec</div>
+          <div class="currency-rates mono is-hidden" id="currency-rates">
+            <span id="rate-money">+$0.00 / sec</span>
+            <span class="rate-sep is-hidden" id="rate-rp-sep">•</span>
+            <span class="is-hidden" id="rate-rp">+0.0 RP / sec</span>
+          </div>
         </div>
 
         <div class="button-housing" id="button-housing">
@@ -52,50 +58,83 @@
           <div class="floating-layer" id="floating-layer" aria-hidden="true"></div>
         </div>
 
-        <!-- Secondary Action: Inspect Casing / Overclock (unlocked later) -->
-        <div class="secondary-action is-hidden" id="secondary-action">
-          <button class="action-btn mono" id="btn-inspect" type="button">
-            INSPECT CASING — $600.00
-          </button>
+        <!-- Active Abilities (Magic Research inspired, unlocked via Research) -->
+        <div class="abilities-bar is-hidden" id="abilities-bar">
+          <div class="section-mini-title mono">ACTIVE PROTOCOLS</div>
+          <div class="abilities-grid" id="abilities-grid"></div>
         </div>
 
-        <!-- Telemetry Strip (unlocked in Phase 3) -->
-        <div class="telemetry-strip is-hidden" id="telemetry-strip">
-          <div class="telemetry-item">
-            <span class="telemetry-key mono">PRESSES</span>
-            <span class="telemetry-val mono" id="stat-presses">0</span>
+        <!-- Compact Story / Memo Feed (unlocked at Phase 1) -->
+        <div class="memo-box is-hidden" id="memo-box">
+          <div class="memo-header">
+            <span class="mono" id="memo-title">COMPANY MEMO</span>
+            <span class="memo-count mono" id="memo-count">0</span>
           </div>
-          <div class="telemetry-item">
-            <span class="telemetry-key mono">PER PRESS</span>
-            <span class="telemetry-val mono" id="stat-per-press">$1.00</span>
-          </div>
-          <div class="telemetry-item">
-            <span class="telemetry-key mono">SIGNAL DEPTH</span>
-            <span class="telemetry-val mono" id="stat-depth">0.0 m</span>
-          </div>
+          <div class="memo-feed" id="memo-feed" role="log" aria-live="polite"></div>
         </div>
       </section>
 
-      <!-- Right Column: Narrative Log & Upgrades (unlocked progressively) -->
-      <aside class="side-column is-hidden" id="side-column">
-        <!-- Upgrades Panel (unlocked in Phase 2) -->
-        <section class="panel is-hidden" id="panel-upgrades" aria-label="Hardware & Upgrades">
-          <div class="panel-header">
-            <h2 class="panel-title mono">HARDWARE &amp; RELAYS</h2>
-            <span class="panel-meta mono" id="upgrades-count">0 INSTALLED</span>
-          </div>
-          <div class="upgrades-list" id="upgrades-list"></div>
-        </section>
+      <!-- Right Column: Tabbed Panels (Operations, Upgrades, Research, Prestige) -->
+      <section class="right-column is-hidden" id="right-column" aria-label="Management Console">
+        <nav class="tab-bar" role="tablist">
+          <button class="tab-btn mono active" data-tab="operations" id="tab-btn-operations" role="tab" aria-selected="true">
+            OPERATIONS
+          </button>
+          <button class="tab-btn mono is-hidden" data-tab="upgrades" id="tab-btn-upgrades" role="tab" aria-selected="false">
+            UPGRADES <span class="tab-badge is-hidden" id="badge-upgrades">0</span>
+          </button>
+          <button class="tab-btn mono is-hidden" data-tab="research" id="tab-btn-research" role="tab" aria-selected="false">
+            R&amp;D LAB <span class="tab-badge is-hidden" id="badge-research">!</span>
+          </button>
+          <button class="tab-btn mono is-hidden" data-tab="prestige" id="tab-btn-prestige" role="tab" aria-selected="false">
+            RESTRUCTURE
+          </button>
+        </nav>
 
-        <!-- Narrative Log Panel (unlocked in Phase 1) -->
-        <section class="panel is-hidden" id="panel-log" aria-label="System Log">
-          <div class="panel-header">
-            <h2 class="panel-title mono">SYSTEM LOG</h2>
-            <span class="panel-meta mono" id="log-count">0 ENTRIES</span>
+        <!-- Panel 1: Operations (AdCap / AdCom style Generators + Managers) -->
+        <div class="tab-panel active" id="panel-operations" role="tabpanel">
+          <div class="panel-toolbar">
+            <span class="toolbar-title mono">BUTTON DIVISIONS</span>
+            <div class="buy-mode-group" id="buy-mode-group">
+              <button class="mode-btn mono active" data-mode="1" type="button">x1</button>
+              <button class="mode-btn mono" data-mode="10" type="button">x10</button>
+              <button class="mode-btn mono" data-mode="max" type="button">MAX</button>
+            </div>
           </div>
-          <div class="log-feed" id="log-feed" role="log" aria-live="polite"></div>
-        </section>
-      </aside>
+          <div class="generators-list" id="generators-list"></div>
+        </div>
+
+        <!-- Panel 2: Dedicated Upgrades Panel -->
+        <div class="tab-panel" id="panel-upgrades" role="tabpanel">
+          <div class="panel-toolbar">
+            <span class="toolbar-title mono">PURCHASE UPGRADES</span>
+            <span class="toolbar-meta mono" id="upgrades-summary">0 / 0 OWNED</span>
+          </div>
+          <div class="upgrades-sections">
+            <div class="upgrade-group-label mono">MANAGERS &amp; AUTOMATION</div>
+            <div class="upgrades-grid" id="managers-list"></div>
+            <div class="upgrade-group-label mono">EQUIPMENT &amp; SYNERGY</div>
+            <div class="upgrades-grid" id="upgrades-list"></div>
+          </div>
+        </div>
+
+        <!-- Panel 3: R&D Lab (Magic Research inspired) -->
+        <div class="tab-panel" id="panel-research" role="tabpanel">
+          <div class="panel-toolbar">
+            <span class="toolbar-title mono">RESEARCH &amp; DEVELOPMENT</span>
+            <span class="toolbar-meta mono" id="research-rp-display">0.0 RP</span>
+          </div>
+          <div class="active-research-box" id="active-research-box">
+            <div class="mono muted-text">No active project. Select a research topic below.</div>
+          </div>
+          <div class="research-list" id="research-list"></div>
+        </div>
+
+        <!-- Panel 4: Prestige / Restructure -->
+        <div class="tab-panel" id="panel-prestige" role="tabpanel">
+          <div class="prestige-card" id="prestige-card"></div>
+        </div>
+      </section>
     </main>
   </div>
 
